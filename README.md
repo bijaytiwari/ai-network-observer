@@ -9,7 +9,7 @@
 
 ![Demo](docs/demo.gif)
 
-> POC #1 in a series of hands-on systems-meets-AI proof-of-concepts. Follow [@<your-github-handle>](https://github.com/<your-github-handle>) for the next ones.
+> POC #1 in a series of hands-on systems-meets-AI proof-of-concepts. Follow [@bijaytiwari](https://github.com/bijaytiwari) for the next ones.
 
 ## What it does
 
