@@ -1,0 +1,132 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Network Observer</title>
+<style>
+html,body{height:100%;margin:0;font-family:sans-serif;font-size:13px}
+body{display:flex}
+#cy{flex:1;min-width:0}
+#panel{width:400px;overflow-y:auto;border-left:1px solid #ccc;background:#fafafa;padding:8px;box-sizing:border-box}
+h3{margin:12px 0 4px;font-size:14px}
+table{border-collapse:collapse;width:100%}
+th,td{padding:2px 6px;text-align:left;border-bottom:1px solid #e5e5e5}
+th{background:#eee}
+.OK{color:#2e8b57}.IDLE{color:#999}.BUSY{color:#d68910}.CONGESTED{color:#c0392b;font-weight:bold}.DOWN{color:#555;font-weight:bold}
+tr.sel{background:#fff3cd}
+#sel{min-height:2.4em}
+#rec{border:1px solid #ccc;background:#fff;padding:6px}
+.recsum{white-space:pre-wrap;margin:4px 0}
+.expl{color:#555;font-style:italic;margin-top:4px}
+code{background:#eee;padding:1px 4px}
+</style>
+<script src="cytoscape.min.js"></script></head><body>
+<div id="cy"></div>
+<div id="panel">
+  <div id="status"></div>
+  <h3>Autonomous Recommendations <span id="recage" style="font-weight:normal;color:#888"></span></h3>
+  <div id="rec">waiting for the agent...</div>
+  <h3>Selected</h3><div id="sel">click a node or a link</div>
+  <h3>Flows</h3><table id="flows"></table>
+  <h3>Links</h3><table id="links"></table>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const cy = cytoscape({container: $('cy'), style: [
+ {selector:'node[type="host"]', style:{'background-color':'#6c8ebf',width:14,height:14,label:'data(id)','font-size':9,'text-valign':'bottom','text-margin-y':4}},
+ {selector:'node[type="switch"]', style:{shape:'round-rectangle','background-color':'#444',width:40,height:24,label:'data(id)',color:'#fff','text-valign':'center','font-size':10}},
+ {selector:'edge', style:{width:'mapData(util,0,1,1,6)','line-color':'#2ecc71',label:'data(lbl)','font-size':14,'font-weight':'bold','text-wrap':'wrap','text-background-color':'#fff','text-background-opacity':0.85,'text-background-padding':2}},
+ {selector:'edge[util >= 0.5]', style:{'line-color':'#f39c12'}},
+ {selector:'edge[q >= 20]', style:{'line-color':'#f39c12'}},
+ {selector:'edge[util >= 0.8]', style:{'line-color':'#e74c3c'}},
+ {selector:'edge[q >= 60]', style:{'line-color':'#e74c3c'}},
+ {selector:'edge[active = 1]', style:{'overlay-color':'#1e90ff','overlay-opacity':0.35,'overlay-padding':5}},
+ {selector:'edge[down = 1]', style:{'line-style':'dashed','line-color':'#888',width:2}},
+ {selector:'edge:selected', style:{'underlay-color':'#ff9800','underlay-opacity':0.45,'underlay-padding':6}},
+ {selector:'node:selected', style:{'border-width':3,'border-color':'#ff9800'}}
+]});
+
+const RANK = {DOWN:0, CONGESTED:1, BUSY:2, OK:3, IDLE:4};
+let last = null;
+
+function status(u, q, down) {
+  if (down) return 'DOWN';
+  if (u >= 0.8 || q >= 20) return 'CONGESTED';
+  if (u >= 0.5) return 'BUSY';
+  return u >= 0.02 ? 'OK' : 'IDLE';
+}
+function linkInfo(id) {
+  const u = last.util[id] || 0, q = (last.queue || {})[id], down = last.down.includes(id);
+  const qp = q ? q.backlog_pkts : 0;
+  return {id, u, qp, hasq: !!q, down, st: status(u, qp, down)};
+}
+
+function renderSel() {
+  if (!last) return;
+  const sel = cy.$(':selected');
+  if (!sel.length) { $('sel').textContent = 'click a node or a link'; return; }
+  $('sel').innerHTML = sel.map(el => {
+    if (el.isEdge()) {
+      const i = linkInfo(el.id());
+      return `<b>${i.id}</b>: ${Math.round(i.u * 100)}% util${i.hasq ? ', queue ' + i.qp : ''} - <span class="${i.st}">${i.st}</span>`;
+    }
+    return `<b>${el.id()}</b>: ` + el.connectedEdges().map(e => `${e.id()} ${Math.round(linkInfo(e.id()).u * 100)}%`).join(', ');
+  }).join('<br>');
+}
+
+function draw() {
+  const s = last, infos = {};
+  cy.edges().forEach(e => {
+    const i = linkInfo(e.id());
+    infos[e.id()] = i;
+    const parts = [];
+    if (i.u > 0.02) parts.push(Math.round(i.u * 100) + '%');
+    if (i.hasq && i.qp > 0) parts.push('queue ' + i.qp);
+    e.data({util: i.u, q: i.qp, down: i.down ? 1 : 0,
+            active: s.active.includes(e.id()) ? 1 : 0, lbl: i.down ? 'DOWN' : parts.join('\n')});
+  });
+  const rows = Object.values(infos).sort((a, b) => RANK[a.st] - RANK[b.st] || b.u - a.u);
+  $('links').innerHTML = '<tr><th>Link</th><th>Util</th><th>Queue</th><th>Status</th></tr>' +
+    rows.map(i => `<tr class="${cy.getElementById(i.id).selected() ? 'sel' : ''}"><td>${i.id}</td><td>${Math.round(i.u * 100)}%</td><td>${i.hasq ? i.qp : '-'}</td><td class="${i.st}">${i.st}</td></tr>`).join('');
+  $('flows').innerHTML = '<tr><th>Flow</th><th>Proto</th><th>Via</th><th>Rate</th><th>Left</th></tr>' +
+    (s.flows.length ? s.flows.map(f => `<tr><td>${f.src}→${f.dst}</td><td>${f.proto.toUpperCase()}</td><td>${f.core}</td><td>${f.mbps ? f.mbps + ' Mbps' : 'max'}</td><td>${f.left}s</td></tr>`).join('')
+                    : '<tr><td colspan="5">none</td></tr>');
+  $('status').innerHTML = `<b>Default core:</b> ${s.core} &nbsp; <b>Down:</b> ${s.down.join(', ') || 'none'} &nbsp; <span style="color:#888">${new Date().toLocaleTimeString()}</span>`;
+  renderSel();
+}
+
+async function poll() {
+  try { last = await (await fetch('/state')).json(); draw(); }
+  catch (e) { $('status').textContent = 'API unreachable'; }
+}
+cy.on('select unselect', () => { if (last) draw(); });
+
+// ---- Autonomous Recommendations (agent.py --serve writes recommendation.json every 5 s) ----
+let recTs = null, recChanged = Date.now();
+async function pollRec() {
+  try {
+    const r = await fetch('recommendation.json?' + Date.now());
+    if (!r.ok) throw new Error('missing');
+    const rec = await r.json();
+    if (rec.ts !== recTs) { recTs = rec.ts; recChanged = Date.now(); }
+    const stale = Date.now() - recChanged > 20000;
+    const cls = {ok: 'OK', congested: 'CONGESTED', waiting: 'IDLE'}[rec.state] || 'IDLE';
+    let h = `<div><span class="${cls}">${esc(rec.state.toUpperCase())}</span>` +
+            (stale ? ' <span class="DOWN">(no update for 20 s - is the agent running?)</span>' : '') + '</div>' +
+            `<div class="recsum">${esc(rec.summary)}</div>`;
+    if (rec.move) h += `<div><b>Action:</b> <code>${esc(rec.move.command)}</code></div>`;
+    if (rec.explanation) h += `<div class="expl">${esc(rec.explanation)}</div>`;
+    $('rec').innerHTML = h;
+    $('recage').textContent = new Date(recChanged).toLocaleTimeString();
+  } catch (e) {
+    $('rec').innerHTML = 'Agent not running. In the VM: <code>python3 agent.py --serve</code>';
+    $('recage').textContent = '';
+  }
+}
+
+(async () => {
+  const t = await (await fetch('topology.json?' + Date.now())).json();
+  cy.add(t.nodes.map(n => ({data: {id: n.id, type: n.type}, position: {x: n.x, y: n.y}})));
+  cy.add(t.links.map(l => ({data: {id: l.id, source: l.source, target: l.target, util: 0, q: 0, active: 0, down: 0, lbl: ''}})));
+  cy.layout({name: 'preset', padding: 30}).run();
+  poll(); setInterval(poll, 1000);
+  pollRec(); setInterval(pollRec, 5000);
+})();
+</script></body></html>
