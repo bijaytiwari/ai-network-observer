@@ -1,0 +1,30 @@
+# python3 flows.py h1,h10,udp,1,600s h2,h9,tcp,2,600s h5,h7,udp,1,10m
+# python3 flows.py -f scenario1.txt
+# python3 flows.py --stop
+# three flows sharing the s3-s1 core link
+# python3 flows.py --steer h5,h7,s2
+# python3 flows.py --steer h2,h9,s2
+# python3 flows.py --link s3-s1,down
+
+# one use case
+#python3 flows.py --mark "baseline idle"
+#sleep 20
+#python3 flows.py --mark "congest s3-s1: 3 flows"
+#python3 flows.py h1,h10,udp,15,60s h2,h9,tcp,0,60s h5,h7,udp,15,60s
+#sleep 30
+#python3 flows.py --mark "divert h5-h7 to s2"
+#python3 flows.py --steer h5,h7,s2
+
+
+
+
+h1,h10,udp,15,600s
+h2,h9,tcp,0,600s
+h5,h7,udp,15,600s
+h3,h1,udp,15,600s
+h2,h1,udp,15,600s
+h4,h2,udp,15,600s
+h5,h2,udp,15,600s
+h9,h4,udp,15,600s
+h8,h4,udp,15,600s
+h7,h4,udp,15,600s
