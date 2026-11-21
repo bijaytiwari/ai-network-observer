@@ -57,6 +57,38 @@ cd ai-network-observer
 sudo python3 topo8.py         # terminal 1: testbed + dashboard on :8000
 python3 agent.py --serve      # terminal 2: recommendations (add --no-llm to skip the model)
 ```
+## An example of 'ai agent' request/response
+Request 
+```
+{
+  "model": "qwen2.5:1.5b",
+  "stream": false,
+  "keep_alive": "5m",
+  "messages": [
+    {"role": "system",
+     "content": "You are a network observer. Using only the facts given, explain in at most 3 short sentences which flow should move and why, and include its command. You only recommend; the user runs the command. Do not invent numbers."},
+    {"role": "user",
+     "content": "Congested link s3-s1: util 100%, queue 96 pkts. Flows: h1->h6 udp, h4->h7 udp, h2->h8 udp, h5->h9 udp\nBest move: h1->h6 (udp), worst link load 1.3x -> 0.9x capacity, command: python3 flows.py --steer h1,h6,s2"}
+  ],
+  "options": {"temperature": 0, "num_ctx": 1024, "num_predict": 100, "num_thread": 2}
+}
+```
+Response
+```
+{
+  "model": "qwen2.5:1.5b",
+  "created_at": "2026-11-21T08:14:43Z",
+  "message": {"role": "assistant",
+              "content": "Move h1->h6 to core s2 to relieve s3-s1. Run: python3 flows.py --steer h1,h6,s2"},
+  "done": true,
+  "done_reason": "stop",
+  "total_duration": 41200000000,
+  "load_duration": 28000000,
+  "prompt_eval_count": 96,
+  "eval_count": 38,
+  "eval_duration": 30500000000
+}
+```
 
 Open <http://localhost:8000>. If Mininet runs in a VirtualBox VM, add a NAT port-forward rule from host port 8000 to guest port 8000.
 
